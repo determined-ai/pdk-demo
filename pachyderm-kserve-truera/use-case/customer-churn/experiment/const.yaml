@@ -1,4 +1,4 @@
-name: dogcat_single
+name: churn_const_experiment
 data:
     pachyderm:
       host:
@@ -6,19 +6,19 @@ data:
       repo:
       branch:
       token:
-labels:
 hyperparameters:
-    learning_rate: .005
-    global_batch_size: 32
-    weight_decay: 1e-4
-    nesterov: True
+  global_batch_size: 512
+  random_seed: 42
+  test_size: 0.2
+  lr: 1e-4
+  dense1: 32
 searcher:
     name: single
-    metric: accuracy
+    metric: val_acc 
     max_length:
-        batches: 100
+        batches: 1000 # records_per_epoch will vary, so fix training length in number of batches instead
     smaller_is_better: false
-entrypoint: model_def:DogCatModel
-resources:
-    slots_per_trial: 2
+min_validation_period:
+    batches: 100 # Validation after every 100 batches
 max_restarts: 0
+entrypoint: model_def:ChurnTrial
