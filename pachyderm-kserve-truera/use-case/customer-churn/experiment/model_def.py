@@ -8,6 +8,7 @@ import torch
 from torch import nn
 from torch import optim
 from determined.pytorch import DataLoader, PyTorchTrial, PyTorchTrialContext
+from determined import InvalidHP
 
 TorchData = Union[Dict[str, torch.Tensor], Sequence[torch.Tensor], torch.Tensor]
 
