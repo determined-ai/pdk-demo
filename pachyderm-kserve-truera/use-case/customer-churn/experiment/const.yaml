@@ -10,7 +10,7 @@ hyperparameters:
   global_batch_size: 512
   random_seed: 42
   test_size: 0.2
-  lr: 1e-4
+  lr: 0.0001
   dense1: 32
 searcher:
     name: single
