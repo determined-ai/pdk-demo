@@ -26,7 +26,7 @@ class ChurnTrial(PyTorchTrial):
             
             self.files = self.download_data()
             
-            if len(files) == 0:
+            if len(self.files) == 0:
                 print("No data. Aborting training.")
                 raise InvalidHP("No data")
 
