@@ -66,13 +66,13 @@ def get_train_and_validation_datasets(files, test_size=0.2, random_seed=42):
     return train_dataset, val_dataset
 
 
-def download_pach_repo(pachyderm_host, pachyderm_port, repo, branch, root, token):
+def download_pach_repo(pachyderm_host, pachyderm_port, repo, branch, root):
     print(f"Starting to download dataset: {repo}@{branch} --> {root}")
 
     if not os.path.exists(root):
         os.makedirs(root)
 
-    client = python_pachyderm.Client(host=pachyderm_host, port=pachyderm_port, auth_token=token)
+    client = python_pachyderm.Client(host=pachyderm_host, port=pachyderm_port)
     files = []
 
     for diff in client.diff_file((repo, branch), "/"):

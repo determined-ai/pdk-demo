@@ -110,8 +110,7 @@ class ChurnTrial(PyTorchTrial):
             data_config['pachyderm']['port'],
             data_config["pachyderm"]["repo"],
             data_config["pachyderm"]["branch"],
-            data_dir,
-            data_config["pachyderm"]["token"]
+            data_dir
         )
         print(f'Data dir set to : {data_dir}')
 
