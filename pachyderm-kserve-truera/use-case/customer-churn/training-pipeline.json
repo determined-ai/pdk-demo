@@ -1,12 +1,12 @@
 {
   "pipeline": {
-    "name": "dogs-and-cats-model"
+    "name": "customer-churn-model"
   },
   "description": "Detects changed files into a repository and triggers a retraining on that dataset",
   "input": {
     "pfs": {
       "name": "data",
-      "repo": "dogs-and-cats",
+      "repo": "customer-churn",
       "branch": "master",
       "glob": "/",
       "empty_files": true
@@ -14,8 +14,8 @@
   },
   "transform": {
     "cmd": ["/bin/sh"],
-    "stdin": ["python train.py --git-url https://git@github.com:/determined-ai/works-with-determined.git --git-ref master --sub-dir pachyderm-seldon/use-case/image-classification/experiment --config const.yaml --repo dogs-and-cats --model dogs-and-cats"],
-    "image": "gcr.io/determined-ai/pachyderm-seldon/train:0.0.20",
+    "stdin": ["python train.py --git-url https://git@github.com:/determined-ai/pdk-demo.git --git-ref main --sub-dir pachyderm-kserve-truera/use-case/customer-churn/experiment --config const.yaml --repo customer-churn --model customer-churn"],
+    "image": "hugcyrill/pds:train_0.0.3",
     "secrets": [
       {
         "name": "pipeline-secret",
