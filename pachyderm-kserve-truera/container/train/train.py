@@ -1,13 +1,14 @@
-from determined.common.experimental.experiment import ExperimentState
+import argparse
+import os
+
+import git
+import yaml
 from determined.common.experimental import experiment
+from determined.common.experimental.experiment import ExperimentState
 from determined.experimental import Determined
 
-import os
-import git
-import argparse
-import yaml
-
 # =====================================================================================
+
 
 class DeterminedClient(Determined):
     def __init__(self, master, user, password):
@@ -15,6 +16,7 @@ class DeterminedClient(Determined):
 
     def continue_experiment(self, config, parent_id, checkpoint_uuid):
         config["searcher"]["source_checkpoint_uuid"] = checkpoint_uuid
+
         resp = self._session.post(
             "/api/v1/experiments",
             json={
@@ -29,7 +31,9 @@ class DeterminedClient(Determined):
 
         return exp
 
+
 # =====================================================================================
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Determined AI Experiment Runner")
@@ -70,16 +74,11 @@ def parse_args():
         help="Name of the model on DeterminedAI to create/update",
     )
 
-    parser.add_argument(
-        "--pachd",
-        type=str,
-        default=None,
-        help="PachD IP address of the external Load Balancer",
-    )
-
     return parser.parse_args()
 
+
 # =====================================================================================
+
 
 def clone_code(repo_url, ref, dir):
     print(f"Cloning code from: {repo_url}@{ref} --> {dir}")
@@ -90,7 +89,9 @@ def clone_code(repo_url, ref, dir):
         repo = git.Repo.clone_from(repo_url, dir)
     repo.git.checkout(ref)
 
+
 # =====================================================================================
+
 
 def read_config(conf_file):
     print(f"Reading experiment config file: {conf_file}")
@@ -102,33 +103,36 @@ def read_config(conf_file):
             print(exc)
     return config
 
+
 # =====================================================================================
 
-def setup_config(config_file, repo, pipeline, job_id, pachd):
-    if pachd is None:
-        pachd = os.getenv("PACHD_LB_SERVICE_HOST")
 
+def setup_config(config_file, repo, pipeline, job_id):
     config = read_config(config_file)
-    config["data"]["pachyderm"]["host"]   = pachd
-    config["data"]["pachyderm"]["port"]   = os.getenv("PACHD_LB_SERVICE_PORT")
-    config["data"]["pachyderm"]["repo"]   = repo
+    config["data"]["pachyderm"]["host"] = os.getenv("PACHD_LB_SERVICE_HOST")
+    config["data"]["pachyderm"]["port"] = os.getenv("PACHD_LB_SERVICE_PORT")
+    config["data"]["pachyderm"]["repo"] = repo
     config["data"]["pachyderm"]["branch"] = job_id
-    config["data"]["pachyderm"]["token"]  = os.getenv("PAC_TOKEN")
+    config["data"]["pachyderm"]["token"] = os.getenv("PAC_TOKEN")
 
-    config["labels"] = [ repo, job_id, pipeline ]
+    config["labels"] = [repo, job_id, pipeline]
 
     return config
 
+
 # =====================================================================================
+
 
 def create_client():
     return DeterminedClient(
-        master  = os.getenv("DET_MASTER"),
-        user    = os.getenv("DET_USER"),
-        password= os.getenv("DET_PASSWORD"),
+        master=os.getenv("DET_MASTER"),
+        user=os.getenv("DET_USER"),
+        password=os.getenv("DET_PASSWORD"),
     )
 
+
 # =====================================================================================
+
 
 def execute_experiment(client, configfile, code_path, checkpoint):
     try:
@@ -141,6 +145,7 @@ def execute_experiment(client, configfile, code_path, checkpoint):
 
         print(f"Created experiment with id='{exp.id}' (parent_id='{parent_id}'). Waiting for its completion...")
 
+        # state = exp.wait()["experiment"]["state"]
         state = exp.wait()
         print(f"Experiment with id='{exp.id}' ended with the following state: {state}")
 
@@ -152,7 +157,9 @@ def execute_experiment(client, configfile, code_path, checkpoint):
         print("Experiment exited with abnormal state")
         return None
 
+
 # =====================================================================================
+
 
 def run_experiment(client, configfile, code_path, model):
     version = model.get_version()
@@ -164,7 +171,9 @@ def run_experiment(client, configfile, code_path, model):
         print("Continuing experiment on DeterminedAI...")
         return execute_experiment(client, configfile, None, version.checkpoint)
 
+
 # =====================================================================================
+
 
 def get_checkpoint(exp):
     try:
@@ -172,7 +181,9 @@ def get_checkpoint(exp):
     except AssertionError:
         return None
 
+
 # =====================================================================================
+
 
 def get_or_create_model(client, model_name, pipeline, repo):
 
@@ -183,14 +194,15 @@ def get_or_create_model(client, model_name, pipeline, repo):
         model = client.get_models(name=model_name)[0]
     else:
         print(f"Creating a new model : {model_name}")
-        model = client.create_model(name=model_name, labels=[ pipeline, repo], metadata={
-            "pipeline": pipeline,
-            "repository": repo
-        })
+        model = client.create_model(
+            name=model_name, labels=[pipeline, repo], metadata={"pipeline": pipeline, "repository": repo}
+        )
 
     return model
 
+
 # =====================================================================================
+
 
 def register_checkpoint(checkpoint, model, job_id):
     print(f"Registering checkpoint on model : {model.name}")
@@ -201,16 +213,24 @@ def register_checkpoint(checkpoint, model, job_id):
     checkpoint.download("/pfs/out/checkpoint")
     print("Checkpoint registered and downloaded to output repository")
 
+
 # =====================================================================================
+
 
 def write_model_info(file, model_name, model_version, pipeline, repo):
     print(f"Writing model information to file: {file}")
 
     model = dict()
-    model["name"]     = model_name
-    model["version"]  = model_version
+    model["name"] = model_name
+    model["version"] = model_version
     model["pipeline"] = pipeline
-    model["repo"]     = repo
+    model["repo"] = repo
+
+    print("Printing model-info.......")
+    print(model_name)
+    print(model_version)
+    print(pipeline)
+    print(repo)
 
     with open(file, "w") as stream:
         try:
@@ -218,14 +238,16 @@ def write_model_info(file, model_name, model_version, pipeline, repo):
         except yaml.YAMLError as exc:
             print(exc)
 
+
 # =====================================================================================
+
 
 def main():
     # --- Retrieve useful info from environment
 
-    job_id    = os.getenv("PACH_JOB_ID")
-    pipeline  = os.getenv("PPS_PIPELINE_NAME")
-    args      = parse_args()
+    job_id = os.getenv("PACH_JOB_ID")
+    pipeline = os.getenv("PPS_PIPELINE_NAME")
+    args = parse_args()
 
     print(f"Starting pipeline: name='{pipeline}', repo='{args.repo}', job_id='{job_id}'")
 
@@ -245,10 +267,10 @@ def main():
 
     # --- Read and setup experiment config file. Then, run experiment
 
-    config = setup_config(config_file, args.repo, pipeline, job_id, args.pachd)
+    config = setup_config(config_file, args.repo, pipeline, job_id)
     client = create_client()
-    model  = get_or_create_model(client, args.model, pipeline, args.repo)
-    exp    = run_experiment(client, config, workdir, model)
+    model = get_or_create_model(client, args.model, pipeline, args.repo)
+    exp = run_experiment(client, config, workdir, model)
 
     if exp is None:
         print("Aborting pipeline as experiment did not succeed")
@@ -268,6 +290,7 @@ def main():
     write_model_info("/pfs/out/model-info.yaml", args.model, job_id, pipeline, args.repo)
 
     print(f"Ending pipeline: name='{pipeline}', repo='{args.repo}', job_id='{job_id}'")
+
 
 # =====================================================================================
 
