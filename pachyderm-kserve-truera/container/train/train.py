@@ -219,8 +219,9 @@ def register_checkpoint(checkpoint, model, job_id):
     version.set_name(job_id)
     version.set_notes("Job_id/commit_id = " + job_id)
 
-    checkpoint.download("/pfs/out/checkpoint")
-    print("Checkpoint registered and downloaded to output repository")
+    # checkpoint.download("/pfs/out/checkpoint")
+    # print("Checkpoint registered and downloaded to output repository")
+    print("Checkpoint registered")
 
 
 # =====================================================================================
