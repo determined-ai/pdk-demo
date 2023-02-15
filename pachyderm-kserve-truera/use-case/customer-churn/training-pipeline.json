@@ -15,7 +15,7 @@
   "transform": {
     "cmd": ["/bin/sh"],
     "stdin": ["python train.py --git-url https://github.com/determined-ai/pdk-demo.git --git-ref main --sub-dir pachyderm-kserve-truera/use-case/customer-churn/experiment --config const.yaml --repo customer-churn --model customer-churn"],
-    "image": "gcr.io/determined-ai/pachyderm-kserve/train:0.0.1",
+    "image": "gcr.io/determined-ai/pachyderm-kserve/train:0.0.2",
     "secrets": [
       {
         "name": "pipeline-secret",

@@ -74,6 +74,12 @@ def parse_args():
         help="Name of the model on DeterminedAI to create/update",
     )
 
+    parser.add_argument(
+        "--host",
+        type=str,
+        help="Pachyderm's hostname or IP to use from the experiment to access the repository",
+    )
+
     return parser.parse_args()
 
 
@@ -107,9 +113,13 @@ def read_config(conf_file):
 # =====================================================================================
 
 
-def setup_config(config_file, repo, pipeline, job_id):
+def setup_config(config_file, repo, pipeline, job_id, host):
+
+    if host is None:
+        host = os.getenv("PACHD_LB_SERVICE_HOST")
+
     config = read_config(config_file)
-    config["data"]["pachyderm"]["host"] = os.getenv("PACHD_LB_SERVICE_HOST")
+    config["data"]["pachyderm"]["host"] = host
     config["data"]["pachyderm"]["port"] = os.getenv("PACHD_LB_SERVICE_PORT")
     config["data"]["pachyderm"]["repo"] = repo
     config["data"]["pachyderm"]["branch"] = job_id
@@ -266,7 +276,7 @@ def main():
 
     # --- Read and setup experiment config file. Then, run experiment
 
-    config = setup_config(config_file, args.repo, pipeline, job_id)
+    config = setup_config(config_file, args.repo, pipeline, job_id, args.host)
     client = create_client()
     model = get_or_create_model(client, args.model, pipeline, args.repo)
     exp = run_experiment(client, config, workdir, model)
