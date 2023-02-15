@@ -1,255 +1,240 @@
-import os
-import time
 import argparse
+import os
+import random
+import time
+
+import numpy as np
+import torch
+import torch.optim as optim
 import yaml
-
-from seldon_deploy_sdk import (
-    Configuration, ApiClient, SeldonDeploymentsApi,
-    SeldonDeployment, ObjectMeta, SeldonDeploymentSpec, PredictorSpec, SeldonPodSpec, PodSpec, Container,
-    PredictiveUnit, Parameter,
-    DriftDetectorApi, DetectorConfigData, DetectorConfiguration, BasicDetectorConfiguration,
-    DetectorDeploymentConfiguration,
-    OutlierDetectorApi, VolumeMount, Volume, SecretVolumeSource, EnvVar
+from determined.common.experimental import ModelVersion
+from determined.experimental import Determined
+from determined.pytorch import load_trial_from_checkpoint_path
+from google.cloud import storage
+from kserve import (
+    KServeClient,
+    V1beta1InferenceService,
+    V1beta1InferenceServiceSpec,
+    V1beta1PredictorSpec,
+    V1beta1TorchServeSpec,
+    constants,
+    utils,
 )
-
-from seldon_deploy_sdk.auth import OIDCAuthenticator
-from seldon_deploy_sdk.auth.base import AuthMethod
-from seldon_deploy_sdk.rest import ApiException
+from kubernetes import client
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
 
 # =====================================================================================
+
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Deploy a model to Seldon Deploy")
-    parser.add_argument("--deploy-name",       type=str, help="Name of the resulting SeldonDeployment")
-    parser.add_argument("--detect-bucket-uri", type=str, help="Bucket to use for all detectors")
-    parser.add_argument("--detect-batch-size", type=str, help="Batch size to use for all detectors")
-    parser.add_argument("--serving-image",     type=str, help="Container image to use to serve the model")
+    parser = argparse.ArgumentParser(description="Deploy a model to KServe")
+    parser.add_argument("--deployment-name", type=str, help="Name of the resulting KServe InferenceService")
+    parser.add_argument("--gcs-model-bucket", type=str, help="GS Bucket name to use for storing model artifacts")
     return parser.parse_args()
 
-# =====================================================================================
-
-def deploy(args, secrets):
-    return secrets.namespace + "/" + args.deploy_name
 
 # =====================================================================================
 
-def create_client(secrets) -> ApiClient:
-    print("Connecting to Seldon at : " + secrets.seldon_url)
-    config = Configuration()
-    config.host               = secrets.seldon_url + "/seldon-deploy/api/v1alpha1"
-    config.oidc_client_id     = "sd-api"
-    config.oidc_server        = secrets.seldon_url + "/auth/realms/deploy-realm"
-    config.oidc_client_secret = secrets.client_secret
-    config.auth_method        = AuthMethod.CLIENT_CREDENTIALS
-    config.verify_ssl         = False
 
-    # Authenticate against an OIDC provider
-    auth = OIDCAuthenticator(config)
-    config.id_token = auth.authenticate()
-    print("Connected.")
-
-    return ApiClient(config)
-
-# =====================================================================================
-
-def build_metadata(model):
-    return "---\n" \
-           "name: {0}\n" \
-           "versions: [ {1} ]\n" \
-           "platform: seldon\n" \
-            "custom:\n" \
-           "    repository: {2}\n" \
-           "    pipeline: {3}"\
-            .format(model.name, model.version, model.repository, model.pipeline)
-
-# =====================================================================================
-
-def create_deploy_descriptor(args, secrets, det, model):
-    return SeldonDeployment(
-        api_version="machinelearning.seldon.io/v1",
-        kind="SeldonDeployment",
-        metadata=ObjectMeta(
-            name=args.deploy_name,
-            namespace=secrets.namespace
-        ),
-        spec=SeldonDeploymentSpec(
-            name=args.deploy_name,
-            predictors=[
-                PredictorSpec(
-                    component_specs=[
-                        SeldonPodSpec(
-                            spec=PodSpec(
-                                containers=[
-                                    Container(
-                                        name=args.deploy_name + "-container",
-                                        image=args.serving_image,
-                                        volume_mounts=[
-                                            VolumeMount(
-                                                name="config",
-                                                mount_path="/app/config"
-                                            )
-                                        ],
-                                        env=[
-                                            EnvVar(
-                                                name="MODEL_METADATA",
-                                                value=build_metadata(model)
-                                            )
-                                        ]
-                                    )
-                                ],
-                                volumes=[
-                                    Volume(
-                                        name="config",
-                                        secret=SecretVolumeSource(
-                                            secret_name="deployment-secret"
-                                        )
-                                    )
-                                ]
-                            )
-                        )
-                    ],
-                    name="default",
-                    replicas=1,
-                    graph=PredictiveUnit(
-                        name=args.deploy_name + "-container",
-                        type="MODEL",
-                        parameters=[
-                            Parameter("det_master",    "STRING", det.master),
-                            Parameter("user",          "STRING", det.username),
-                            Parameter("password",      "STRING", det.password),
-                            Parameter("model_name",    "STRING", model.name),
-                            Parameter("model_version", "STRING", model.version)
-                        ],
-                    ),
-                    traffic=100,
-                )
-            ],
-        ),
-    )
-
-# =====================================================================================
-
-def deploy_model(api_client, args, secrets, det, model):
-    api_instance = SeldonDeploymentsApi(api_client)
-
-    descriptor = create_deploy_descriptor(args, secrets, det, model)
-
-    try:
-        api_instance.delete_seldon_deployment(args.deploy_name, secrets.namespace)
-    except ApiException:
-        pass
-
-    try:
-        time.sleep(3)
-        api_instance.create_seldon_deployment(secrets.namespace, descriptor)
-        print(f"Deployment '{deploy(args, secrets)}' created")
-        return True
-    except ApiException as e:
-        print(f"Deployment of '{deploy(args, secrets)}' failed: %s\n" % e)
-        return False
-
-# =====================================================================================
-
-def create_drift_detector(api_client, args, secrets, model):
-    api_instance = DriftDetectorApi(api_client)
-    drift_detector = DetectorConfigData(
-        name=args.deploy_name,
-        config=DetectorConfiguration(
-            deployment=DetectorDeploymentConfiguration(
-                model_name=model.version[:5],
-                event_type="io.seldon.serving.inference.drift",
-                event_source="io.seldon.serving.seldon-seldondeployment-{}-drift".format(args.deploy_name),
-                reply_url="http://seldon-request-logger.seldon-logs",
-                protocol="seldon.http",
-                http_port="8080",
-                user_permission=8888,
-            ),
-            basic=BasicDetectorConfiguration(
-                drift_batch_size=args.detect_batch_size,
-                storage_uri=args.detect_bucket_uri + "/seldon/drift_detector"
-            ),
-        ),
-    )
-
-    try:
-        api_instance.delete_drift_detector_seldon_deployment(args.deploy_name, secrets.namespace, args.deploy_name)
-    except ApiException:
-        pass
-
-    try:
-        time.sleep(3)
-        api_instance.create_drift_detector_seldon_deployment(args.deploy_name, secrets.namespace, drift_detector)
-        print(f"Drift detector '{deploy(args, secrets)}' created")
-        return True
-    except ApiException as e:
-        print(f"Deployment of drift detector '{deploy(args, secrets)}' failed: %s\n" % e)
-        return False
-
-# =====================================================================================
-
-def create_outlier_detector(api_client, args, secrets, model):
-    api_instance = OutlierDetectorApi(api_client)
-    outlier_detector = DetectorConfigData(
-        name=args.deploy_name,
-        config=DetectorConfiguration(
-            deployment=DetectorDeploymentConfiguration(
-                model_name=model.version[:5],
-                event_type="io.seldon.serving.inference.outlier",
-                event_source="io.seldon.serving.seldon-seldondeployment-{}-outlier".format(args.deploy_name),
-                reply_url="http://seldon-request-logger.seldon-logs",
-                protocol="seldon.http",
-                http_port="8080",
-                user_permission=8888,
-            ),
-            basic=BasicDetectorConfiguration(
-                drift_batch_size=args.detect_batch_size,
-                storage_uri=args.detect_bucket_uri + "/seldon/outlier_detector"
-            )
-        )
-    )
-
-    try:
-        api_instance.delete_outlier_detector_seldon_deployment(args.deploy_name, secrets.namespace, args.deploy_name)
-    except ApiException:
-        pass
-
-    try:
-        time.sleep(3)
-        api_instance.create_outlier_detector_seldon_deployment(args.deploy_name, secrets.namespace, outlier_detector)
-        print(f"Outlier detector '{deploy(args, secrets)}' created")
-        return True
-    except ApiException as e:
-        print(f"Deployment of outlier detector '{deploy(args, secrets)}' failed: %s\n" % e)
-        return False
-
-# =====================================================================================
-
-def wait_for_deployment(api_client, args, secrets):
-    api_instance = SeldonDeploymentsApi(api_client)
-
-    try:
-        while True:
-            api_response = api_instance.read_seldon_deployment(args.deploy_name, secrets.namespace)
-            if api_response.status.state == "Available":
-                print(f"Deployment of '{deploy(args, secrets)} is ready")
-                break
-            else:
-                print(f"Waiting for deployment of '{deploy(args, secrets)}...")
-                time.sleep(5)
+def wait_for_deployment(KServe, k8s_namespace, deployment_name, model_name):
+    while KServe.is_isvc_ready(deployment_name, namespace=k8s_namespace) == False:
+        print(f"Inference Service '{deployment_name}' is NOT READY. Waiting...")
         time.sleep(5)
-    except ApiException as e:
-        print(f"Raised error while waiting for deployment of '{deploy(args, secrets)}: %s\n" % e)
-        pass
+    print(f"Inference Service '{deployment_name}' in Namespace '{k8s_namespace}' is READY.")
+    response = KServe.get(deployment_name, namespace=k8s_namespace)
+    print(
+        "Model "
+        + model_name
+        + " is "
+        + str(response["status"]["modelStatus"]["states"]["targetModelState"])
+        + " and available at "
+        + str(response["status"]["address"]["url"])
+        + " for predictions."
+    )
+
 
 # =====================================================================================
+
+
+def get_version(client, model_name, model_version) -> ModelVersion:
+
+    for version in client.get_model(model_name).get_versions():
+        if version.name == model_version:
+            return version
+
+    raise AssertionError(f"Version '{model_version}' not found inside model '{model_name}'")
+
+
+# =====================================================================================
+
+
+def create_state_dict(det_master, det_user, det_pw, model_name, pach_id):
+
+    print(f"Loading model version '{model_name}/{pach_id}' from master at '{det_master}...'")
+
+    if os.environ["HOME"] == "/":
+        os.environ["HOME"] = "/app"
+
+    os.environ["SERVING_MODE"] = "true"
+
+    start = time.time()
+    client = Determined(master=det_master, user=det_user, password=det_pw)
+    version = get_version(client, model_name, pach_id)
+    checkpoint = version.checkpoint
+    checkpoint_dir = checkpoint.download()
+    trial = load_trial_from_checkpoint_path(checkpoint_dir, map_location=torch.device("cpu"))
+    end = time.time()
+    delta = end - start
+    print(f"Checkpoint loaded in {delta} seconds.")
+
+    print(f"Creating state_dict from Determined checkpoint...")
+
+    # Define Model
+    model = trial.model
+
+    # Save model state_dict
+    torch.save(model.state_dict(), "./state_dict.pth")
+
+    print(f"state_dict created successfully.")
+
+
+# =====================================================================================
+
+
+def create_mar_file(model_name, model_version):
+    print(f"Creating .mar file for model '{model_name}'...")
+    os.system(
+        "torch-model-archiver --model-name %s --version %s --serialized-file ./state_dict.pth --handler ./customer_churn_handler.py --force"
+        % (model_name, model_version)
+    )
+    print(f"Created .mar file successfully.")
+
+
+# =====================================================================================
+
+
+def create_properties_file(model_name, model_version):
+    config_properties = """inference_address=http://0.0.0.0:8085
+management_address=http://0.0.0.0:8081
+metrics_address=http://0.0.0.0:8082
+grpc_inference_port=7070
+grpc_management_port=7071
+enable_envvars_config=true
+install_py_dep_per_model=true
+enable_metrics_api=true
+metrics_format=prometheus
+NUM_WORKERS=1
+number_of_netty_threads=4
+job_queue_size=10
+model_store=/mnt/models/model-store
+model_snapshot={"name":"startup.cfg","modelCount":1,"models":{"%s":{"%s":{"defaultVersion":true,"marName":"%s.mar","minWorkers":1,"maxWorkers":5,"batchSize":1,"maxBatchDelay":5000,"responseTimeout":120}}}}""" % (
+        model_name,
+        model_version,
+        model_name,
+    )
+
+    conf_prop = open("config.properties", "w")
+    n = conf_prop.write(config_properties)
+    conf_prop.close()
+
+    model_files = ["config.properties", str(model_name) + ".mar"]
+
+    return model_files
+
+
+# =====================================================================================
+
+
+def upload_model(model_name, files, bucket_name):
+    print("Uploading model files to model repository in GCS bucket...")
+    storage_client = storage.Client()
+    bucket = storage_client.get_bucket(bucket_name)
+
+    for file in files:
+        if "config" in str(file):
+            folder = "config"
+        else:
+            folder = "model-store"
+        blob = bucket.blob(model_name + "/" + folder + "/" + file)
+        blob.upload_from_filename("./" + file)
+
+    print("Upload to GCS complete.")
+
+
+# =====================================================================================
+
+
+def create_inference_service(kclient, k8s_namespace, model_name, deployment_name, pach_id, replace: bool):
+
+    kserve_version = "v1beta1"
+    api_version = constants.KSERVE_GROUP + "/" + kserve_version
+
+    isvc = V1beta1InferenceService(
+        api_version=api_version,
+        kind=constants.KSERVE_KIND,
+        metadata=client.V1ObjectMeta(
+            name=deployment_name,
+            namespace=k8s_namespace,
+            annotations={"sidecar.istio.io/inject": "false", "pach_id": pach_id},
+        ),
+        spec=V1beta1InferenceServiceSpec(
+            predictor=V1beta1PredictorSpec(
+                pytorch=(
+                    V1beta1TorchServeSpec(protocol_version="v2", storage_uri="gs://kserve-models/%s" % (model_name))
+                )
+            )
+        ),
+    )
+
+    if replace:
+        print(f"Replacing InferenceService with new version...")
+        kclient.replace(deployment_name, isvc)
+        print(f"InferenceService replaced with new version '{pach_id}'.")
+    else:
+        print(f"Creating KServe InferenceService for model '{model_name}'.")
+        kclient.create(isvc)
+        print(f"Inference Service '{deployment_name}' created.")
+
+
+# =====================================================================================
+
+
+def check_existence(kclient, deployment_name, k8s_namespace):
+
+    print(f"Checking if previous version of InferenceService '{deployment_name}' exists...")
+
+    try:
+        response = kclient.get(deployment_name, namespace=k8s_namespace)
+        exists = True
+        print(f"Previous version of InferenceService '{deployment_name}' exists.")
+    except (RuntimeError):
+        exists = False
+        print(f"Previous version of InferenceService '{deployment_name}' does not exist.")
+
+    return exists
+
+
+# =====================================================================================
+
 
 class DeterminedInfo:
     def __init__(self):
-        self.master   = os.getenv("DET_MASTER")
+        self.master = os.getenv("DET_MASTER")
         self.username = os.getenv("DET_USER")
         self.password = os.getenv("DET_PASSWORD")
 
+
 # =====================================================================================
+
+
+class KServeInfo:
+    def __init__(self):
+        self.namespace = os.getenv("KSERVE_NAMESPACE")
+
+
+# =====================================================================================
+
 
 class ModelInfo:
     def __init__(self, file):
@@ -259,47 +244,57 @@ class ModelInfo:
             try:
                 info = yaml.safe_load(stream)
 
-                self.name       = info["name"]
-                self.version    = info["version"]
-                self.pipeline   = info["pipeline"]
+                self.name = info["name"]
+                self.version = info["version"]
+                self.pipeline = info["pipeline"]
                 self.repository = info["repo"]
 
-                print(f"Loaded model info: name='{self.name}', version='{self.version}', pipeline='{self.pipeline}', repo='{self.repository}'")
+                print(
+                    f"Loaded model info: name='{self.name}', version='{self.version}', pipeline='{self.pipeline}', repo='{self.repository}'"
+                )
             except yaml.YAMLError as exc:
                 print(exc)
 
-# =====================================================================================
-
-class SecretInfo:
-    def __init__(self):
-        self.seldon_url    = os.getenv("SEL_URL")
-        self.client_secret = os.getenv("SEL_SECRET")
-        self.namespace     = os.getenv("SEL_NAMESPACE")
 
 # =====================================================================================
+
 
 def main():
-    args    = parse_args()
-    det     = DeterminedInfo()
-    model   = ModelInfo("/pfs/data/model-info.yaml")
-    secrets = SecretInfo()
+    args = parse_args()
+    det = DeterminedInfo()
+    ksrv = KServeInfo()
+    model = ModelInfo("/pfs/data/model-info.yaml")
 
-    print(f"Starting pipeline: deploy-name='{args.deploy_name}', model='{model.name}', version='{model.version}'")
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/determined_shared_fs/service-account.json"
 
-    api_client = create_client(secrets)
+    print(f"Starting pipeline: deploy-name='{args.deployment_name}', model='{model.name}', version='{model.version}'")
 
-    if not deploy_model(api_client, args, secrets, det, model):
-        return
+    # Pull Determined.AI Checkpoint, load it, and create State_Dict from det checkpoint
+    create_state_dict(det.master, det.username, det.password, model.name, model.version)
 
-    if not create_drift_detector(api_client, args, secrets, model):
-        return
+    # Create .mar file from State_Dict and handler
+    create_mar_file(model.name, model.version)
 
-    if not create_outlier_detector(api_client, args, secrets, model):
-        return
+    # Create config.properties for .mar file, return files to upload to GCS bucket
+    model_files = create_properties_file(model.name, model.version)
 
-    wait_for_deployment(api_client, args, secrets)
+    # Upload model artifacts to GCS bucket in the format for TorchServe
+    upload_model(model.name, model_files, args.gcs_model_bucket)
 
-    print(f"Ending pipeline: deploy-name='{args.deploy_name}', model='{model.name}', version='{model.version}'")
+    # Instantiate KServe Client using kubeconfig
+    kclient = KServeClient(config_file="/determined_shared_fs/k8s.config")
+
+    # Check if a previous version of the InferenceService exists (return true/false)
+    replace = check_existence(kclient, args.deployment_name, ksrv.namespace)
+
+    # Create or replace inference service
+    create_inference_service(kclient, ksrv.namespace, model.name, args.deployment_name, model.version, replace)
+
+    # Wait for InferenceService to be ready for predictions
+    wait_for_deployment(kclient, ksrv.namespace, args.deployment_name, model.name)
+
+    print(f"Ending pipeline: deploy-name='{args.deployment_name}', model='{model.name}', version='{model.version}'")
+
 
 # =====================================================================================
 
