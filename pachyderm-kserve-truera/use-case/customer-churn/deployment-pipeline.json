@@ -2,7 +2,7 @@
   "pipeline": {
     "name": "customer-churn-deploy"
   },
-  "description": "Deploys a model into production via the K-Serve deploy REST APIs.",
+  "description": "Deploys a model into production via the KServe Python SDK.",
   "input": {
     "pfs": {
       "name": "data",
@@ -12,10 +12,14 @@
     }
   },
   "transform": {
-    "cmd": ["/bin/sh"],
-    "stdin": ["python deploy.py --deploy-name customer-churn-deploy --detect-bucket-uri gs://determined-seldon-detector --detect-batch-size 4 --serving-image gcr.io/determined-ai/pachyderm-seldon/serve:0.0.7"],
-    "image": "gcr.io/determined-ai/pachyderm-seldon/deploy:0.0.7",
-    "secrets": [ 
+    "cmd": [
+      "/bin/sh"
+    ],
+    "stdin": [
+      "python deploy.py --deployment-name customer-churn-deploy --gcs-model-bucket kserve-models"
+    ],
+    "image": "hugcyrill/pdk:deploy_brain_0.0.4",
+    "secrets": [
       {
         "name": "pipeline-secret",
         "key": "det_master",
@@ -33,19 +37,10 @@
       },
       {
         "name": "pipeline-secret",
-        "key": "sel_url",
-        "env_var": "SEL_URL"
-      },
-      {
-        "name": "pipeline-secret",
-        "key": "sel_secret",
-        "env_var": "SEL_SECRET"
-      },
-      {
-        "name": "pipeline-secret",
-        "key": "sel_namespace",
-        "env_var": "SEL_NAMESPACE"
+        "key": "kserve_namespace",
+        "env_var": "KSERVE_NAMESPACE"
       }
     ]
-  }
+  },
+  "pod_patch": "[  {   \"op\": \"add\",   \"path\": \"/volumes/-\",   \"value\": {    \"name\": \"det-checkpoints\",    \"hostpath\": {     \"path\": \"/mnt/mapr_nfs/determined/det_checkpoints\",     \"type\": \"Directory\"    }   }  },  {   \"op\": \"add\",   \"path\": \"/containers/0/volumeMounts/-\",   \"value\": {    \"mountPath\": \"/determined_shared_fs\",    \"name\": \"det-checkpoints\"   }  } ]"
 }
