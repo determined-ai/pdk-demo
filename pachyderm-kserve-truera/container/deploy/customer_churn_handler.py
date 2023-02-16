@@ -62,12 +62,12 @@ class CustomerChurnHandler(BaseHandler):
 
     def inference(self, inputs):
     
-        output = self.model(input_tensor)
+        output = self.model(inputs.to(self.device))
         output[output < 0.5] = 0.0
         output[output >= 0.5] = 1.0
-        logger.info('Predictions successfully created.')
+        logger.info('Predictions successfully obtained.')
 
-        return predictions
+        return output
     
     def postprocess(self, data):
 
