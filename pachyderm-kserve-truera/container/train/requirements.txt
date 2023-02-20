@@ -1,1 +1,1 @@
-determined==0.19.10
+determined==0.19.11
