@@ -1,11 +1,8 @@
 import argparse
 import os
-import random
 import time
 
-import numpy as np
 import torch
-import torch.optim as optim
 import yaml
 from determined.common.experimental import ModelVersion
 from determined.experimental import Determined
@@ -21,8 +18,6 @@ from kserve import (
     utils,
 )
 from kubernetes import client
-from torch import nn
-from torch.utils.data import DataLoader, Dataset
 
 # =====================================================================================
 
@@ -265,7 +260,7 @@ def main():
     ksrv = KServeInfo()
     model = ModelInfo("/pfs/data/model-info.yaml")
 
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/determined_shared_fs/service-account.json"
+    # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/determined_shared_fs/service-account.json"
 
     print(f"Starting pipeline: deploy-name='{args.deployment_name}', model='{model.name}', version='{model.version}'")
 
