@@ -12,6 +12,10 @@ from determined import InvalidHP
 
 TorchData = Union[Dict[str, torch.Tensor], Sequence[torch.Tensor], torch.Tensor]
 
+
+# =====================================================================================
+
+
 class ChurnTrial(PyTorchTrial):
     def __init__(self, context: PyTorchTrialContext):
         # Initialize the trial class and wrap the models, optimizers, and LR schedulers.
@@ -46,6 +50,7 @@ class ChurnTrial(PyTorchTrial):
         
         self.loss_function = nn.BCELoss()
 
+    # ---------------------------------------------------------------------------------
 
     def train_batch(self, batch: TorchData, epoch_idx: int, batch_idx: int):
         # Run forward passes on the models and backward passes on the optimizers.
@@ -67,6 +72,8 @@ class ChurnTrial(PyTorchTrial):
         
         return {"loss": loss, "acc": acc}
 
+    # ---------------------------------------------------------------------------------
+
     def evaluate_batch(self, batch: TorchData):
         # Define how to evaluate the model by calculating loss and other metrics
         # for a batch of validation data.
@@ -81,6 +88,8 @@ class ChurnTrial(PyTorchTrial):
         
         return {"val_loss": val_loss, "val_acc": val_acc}
 
+    # ---------------------------------------------------------------------------------
+
     def build_training_data_loader(self):
         # Create the training data loader.
         # This should return a determined.pytorch.Dataset.
@@ -90,6 +99,8 @@ class ChurnTrial(PyTorchTrial):
                                                             random_seed=self.context.get_hparam("random_seed"))
         
         return DataLoader(train_dataset, batch_size=self.context.get_per_slot_batch_size())
+
+    # ---------------------------------------------------------------------------------
 
     def build_validation_data_loader(self):
         # Create the validation data loader.
@@ -101,6 +112,8 @@ class ChurnTrial(PyTorchTrial):
         
         return DataLoader(val_dataset, batch_size=self.context.get_per_slot_batch_size())
     
+    # ---------------------------------------------------------------------------------
+
     def download_data(self):
         data_config = self.context.get_data_config()
         data_dir = os.path.join(self.download_directory, 'data')
@@ -115,3 +128,6 @@ class ChurnTrial(PyTorchTrial):
         print(f'Data dir set to : {data_dir}')
 
         return [des for src, des in files]
+
+
+# =====================================================================================

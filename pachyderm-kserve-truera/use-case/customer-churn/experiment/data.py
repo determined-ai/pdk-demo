@@ -5,7 +5,6 @@ import python_pachyderm
 from python_pachyderm.proto.v2.pfs.pfs_pb2 import FileType
 
 import pandas as pd
-import numpy as np
 
 from utils import *
 
@@ -13,6 +12,10 @@ from sklearn.model_selection import train_test_split
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+
+
+# =====================================================================================
+
 
 class Churn_Dataset(Dataset):
  
@@ -26,6 +29,10 @@ class Churn_Dataset(Dataset):
   
   def __getitem__(self,idx):
     return self.X[idx], self.y[idx]
+
+
+# =====================================================================================
+
 
 def get_train_and_validation_datasets(files, test_size=0.2, random_seed=42):
     
@@ -66,6 +73,9 @@ def get_train_and_validation_datasets(files, test_size=0.2, random_seed=42):
     return train_dataset, val_dataset
 
 
+# =====================================================================================
+
+
 def download_pach_repo(pachyderm_host, pachyderm_port, repo, branch, root):
     print(f"Starting to download dataset: {repo}@{branch} --> {root}")
 
@@ -89,10 +99,13 @@ def download_pach_repo(pachyderm_host, pachyderm_port, repo, branch, root):
 
     for src_path, des_path in files:
         src_file = client.get_file((repo, branch), src_path)
-        # print(f'Downloading {src_path} to {des_path}')
+        print(f'Downloading {src_path} to {des_path}')
 
         with open(des_path, "wb") as dest_file:
             shutil.copyfileobj(src_file, dest_file)
 
     print("Download operation ended")
     return files
+
+
+# =====================================================================================
