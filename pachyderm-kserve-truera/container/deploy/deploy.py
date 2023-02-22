@@ -254,6 +254,16 @@ class ModelInfo:
 # =====================================================================================
 
 
+def dump_file(filename):
+    print(f"Dumping file: {filename}")
+    with open(filename, 'r') as file:
+        data = file.read()
+        print(data)
+
+
+# =====================================================================================
+
+
 def main():
     args = parse_args()
     det = DeterminedInfo()
@@ -278,6 +288,7 @@ def main():
 
     # Instantiate KServe Client using kubeconfig
     kclient = KServeClient(config_file="/kube/config")
+    dump_file("/kube/config")
 
     # Check if a previous version of the InferenceService exists (return true/false)
     replace = check_existence(kclient, args.deployment_name, ksrv.namespace)
