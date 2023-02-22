@@ -18,7 +18,7 @@
     "stdin": [
       "python deploy.py --deployment-name customer-churn-deploy --gcs-model-bucket kserve-models"
     ],
-    "image": "gcr.io/determined-ai/pachyderm-kserve/deploy:0.0.5",
+    "image": "gcr.io/determined-ai/pachyderm-kserve/deploy:0.0.6",
     "secrets": [
       {
         "name": "pipeline-secret",
