@@ -22,3 +22,9 @@ min_validation_period:
     batches: 100 # Validation after every 100 batches
 max_restarts: 0
 entrypoint: model_def:ChurnTrial
+resources:
+    slots_per_trial: 2
+profiling:
+  enabled: true
+  begin_on_batch: 0
+  end_after_batch: null
