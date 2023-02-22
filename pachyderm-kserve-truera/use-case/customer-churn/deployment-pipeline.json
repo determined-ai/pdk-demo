@@ -39,6 +39,10 @@
         "name": "pipeline-secret",
         "key": "kserve_namespace",
         "env_var": "KSERVE_NAMESPACE"
+      },
+      {
+        "name": "kube-config",
+        "mount_path": "/kube"
       }
     ]
   }

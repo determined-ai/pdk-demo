@@ -277,8 +277,7 @@ def main():
     upload_model(model.name, model_files, args.gcs_model_bucket)
 
     # Instantiate KServe Client using kubeconfig
-    # kclient = KServeClient(config_file="/determined_shared_fs/k8s.config")
-    kclient = KServeClient()
+    kclient = KServeClient(config_file="/kube/config")
 
     # Check if a previous version of the InferenceService exists (return true/false)
     replace = check_existence(kclient, args.deployment_name, ksrv.namespace)
