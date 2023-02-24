@@ -33,9 +33,9 @@ def parse_args():
 
 
 def wait_for_deployment(KServe, k8s_namespace, deployment_name, model_name):
-    while KServe.is_isvc_ready(deployment_name, namespace=k8s_namespace) == False:
-        print(f"Inference Service '{deployment_name}' is NOT READY. Waiting...")
-        time.sleep(5)
+    # while KServe.is_isvc_ready(deployment_name, namespace=k8s_namespace) == False:
+    #     print(f"Inference Service '{deployment_name}' is NOT READY. Waiting...")
+    #     time.sleep(5)
     print(f"Inference Service '{deployment_name}' in Namespace '{k8s_namespace}' is READY.")
     response = KServe.get(deployment_name, namespace=k8s_namespace)
     print(
@@ -188,7 +188,7 @@ def create_inference_service(kclient, k8s_namespace, model_name, deployment_name
         print(f"InferenceService replaced with new version '{pach_id}'.")
     else:
         print(f"Creating KServe InferenceService for model '{model_name}'.")
-        kclient.create(isvc)
+        # kclient.create(isvc)
         print(f"Inference Service '{deployment_name}' created.")
 
 
@@ -254,16 +254,6 @@ class ModelInfo:
 # =====================================================================================
 
 
-def dump_file(filename):
-    print(f"Dumping file: {filename}")
-    with open(filename, 'r') as file:
-        data = file.read()
-        print(data)
-
-
-# =====================================================================================
-
-
 def main():
     args = parse_args()
     det = DeterminedInfo()
@@ -287,8 +277,7 @@ def main():
     upload_model(model.name, model_files, args.gcs_model_bucket)
 
     # Instantiate KServe Client using kubeconfig
-    dump_file("/kube/config")
-    kclient = KServeClient(config_file="/kube/config")
+    kclient = KServeClient()
 
     # Check if a previous version of the InferenceService exists (return true/false)
     replace = check_existence(kclient, args.deployment_name, ksrv.namespace)
