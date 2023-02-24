@@ -37,16 +37,16 @@ def wait_for_deployment(KServe, k8s_namespace, deployment_name, model_name):
     #     print(f"Inference Service '{deployment_name}' is NOT READY. Waiting...")
     #     time.sleep(5)
     print(f"Inference Service '{deployment_name}' in Namespace '{k8s_namespace}' is READY.")
-    response = KServe.get(deployment_name, namespace=k8s_namespace)
-    print(
-        "Model "
-        + model_name
-        + " is "
-        + str(response["status"]["modelStatus"]["states"]["targetModelState"])
-        + " and available at "
-        + str(response["status"]["address"]["url"])
-        + " for predictions."
-    )
+    # response = KServe.get(deployment_name, namespace=k8s_namespace)
+    # print(
+    #     "Model "
+    #     + model_name
+    #     + " is "
+    #     + str(response["status"]["modelStatus"]["states"]["targetModelState"])
+    #     + " and available at "
+    #     + str(response["status"]["address"]["url"])
+    #     + " for predictions."
+    # )
 
 
 # =====================================================================================
